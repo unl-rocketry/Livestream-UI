@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Vortex — Launch Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      /*
+        OBS Browser Source:
+          Width: 1920  Height: 1080
+      */
+      background: transparent;
+    }
+
+    /* ── DESIGN TOKENS ──────────────────────────────────────────── */
+    :root {
+      --accent:          #00cece;
+      --goal-color:      #ffc947;    /* amber — near goal / short of goal */
+      --goal-reached:    #00e676;    /* green — at or above goal          */
+
+      --panel-bg:        rgba(5, 13, 22, 0.94);
+      --panel-border:    rgba(0, 206, 206, 0.18);
+      --divider:         rgba(255, 255, 255, 0.08);
+
+      --text-primary:    #ffffff;
+      --text-timer:      #17dac0d0;
+      --text-gauge:      #757575;
+      --text-muted:      rgba(68, 68, 68, 0.38);
+      --text-dim:        rgba(255, 255, 255, 0.16);
+      --gauge-track:     rgba(255, 255, 255, 0.07);
+
+      --font-display:    'Orbitron',        monospace;
+      --font-mono:       'Share Tech Mono', monospace;
+      --font-ui:         'Exo 2',           sans-serif;
+
+      --bar-height:       104px;
+      --timeline-height:  30px;
+      --gauge-size:       80px;
+      --gauge-stroke-w:   5px;
+    }
+
+    /* ── OVERLAY ROOT ───────────────────────────────────────────── */
+    #overlay {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       TOP-LEFT BRANDING BLOCK
+       Layout (top to bottom):
+         UNL AEROSPACE   ← org label
+         VORTEX          ← mission name (large)
+         ───────────────
+         2026-05-01 18:04:52.456Z  ← live UTC timestamp
+    ══════════════════════════════════════════════════════════════ */
+    #brand-left {
+      position: absolute;
+      top: 12px; left: 14px;
+    }
+
+    #brand-left .bl-org {
+      font-family: var(--font-ui);
+      font-size: 9px; font-weight: 600;
+      letter-spacing: 0.26em; text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    #brand-left .bl-mission {
+      font-family: var(--font-display);
+      font-size: 20px; font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      line-height: 1;
+    }
+
+    #brand-left .bl-rule {
+      margin-top: 5px; margin-bottom: 4px;
+      height: 1px;
+      width: 100%;
+      background: var(--panel-border);
+    }
+
+    #brand-left .bl-timestamp {
+      font-family: var(--font-mono);
+      font-size: 10px; letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    /* ── BOTTOM PANEL ───────────────────────────────────────────── */
+    #bottom-panel {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: calc(var(--bar-height) + var(--timeline-height));
+      display: flex; flex-direction: column;
+    }
+
+    /* ── TIMELINE STRIP ─────────────────────────────────────────── */
+    #timeline {
+      height: var(--timeline-height);
+      background: rgba(5, 13, 22, 0.72);
+      border-top: 1px solid var(--panel-border);
+      position: relative; flex-shrink: 0;
+    }
+    .tl-track {
+      position: absolute; left: 5%; right: 5%; bottom: 8px;
+      height: 1px; background: var(--divider);
+    }
+    .tl-fill {
+      position: absolute; left: 0; top: 0; bottom: 0;
+      width: 0%; background: var(--accent);
+      transition: width 0.8s linear;
+    }
+    .tl-cursor {
+      position: absolute; bottom: 12px;
+      width: 0; height: 0;
+      border-left: 5px solid transparent; border-right: 5px solid transparent;
+      border-bottom: 7px solid #fff;
+      transform: translateX(-50%); transition: left 0.8s linear;
+    }
+    .tl-event {
+      position: absolute; bottom: 4px; transform: translateX(-50%);
+      display: flex; flex-direction: column-reverse; align-items: center; gap: 3px;
+    }
+    .tl-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      border: 1.5px solid var(--text-dim); background: var(--panel-bg);
+      position: relative; bottom: -3px;
+      transition: border-color 0.5s, background 0.5s;
+    }
+    .tl-event.done   .tl-dot { border-color: var(--accent); background: var(--accent); }
+    .tl-event.active .tl-dot { border-color: #fff;          background: #fff;          }
+    .tl-label {
+      font-size: 9px; font-weight: 600; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--text-dim); white-space: nowrap;
+      transition: color 0.5s;
+    }
+    .tl-event.done   .tl-label { color: rgba(0, 206, 206, 0.5); }
+    .tl-event.active .tl-label { color: var(--text-primary); }
+
+    /* ── DATA BAR ───────────────────────────────────────────────── */
+    #data-bar {
+      height: var(--bar-height);
+      background: var(--panel-bg);
+      border-top: 1px solid var(--panel-border);
+      display: flex; align-items: center; flex-shrink: 0;
+    }
+    .bar-divider { width: 1px; height: 60px; background: var(--divider); flex-shrink: 0; }
+
+    /* ── CIRCULAR GAUGES ────────────────────────────────────────── */
+    .gauge-wrap {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 4px; padding: 0 24px; flex-shrink: 0;
+    }
+    .gauge-ring { position: relative; width: var(--gauge-size); height: var(--gauge-size); }
+
+    .gauge-ring svg { transform: rotate(-90deg); transform-origin: 50% 50%; overflow: visible; }
+
+    .gauge-track-c  { fill: none; stroke: var(--gauge-track); stroke-width: var(--gauge-stroke-w); }
+    .gauge-arc {
+      fill: none; stroke: var(--accent); stroke-width: var(--gauge-stroke-w);
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.7s ease, stroke 0.5s ease;
+    }
+
+    /*
+      ── ALTITUDE GOAL MARKER  ──────────────────────────────────────
+      A prominent tick that crosses the arc at 10 000 ft = 66.7 % of
+      the 15 000 ft full scale.
+
+      The entire <svg> is CSS-rotated −90° so its elements must be
+      expressed in pre-rotation SVG coordinates.  The tick runs from
+      r=24 (inside arc) to r=41 (outside arc), crossing through the
+      arc ring at r=34, making it clearly visible on both sides.
+
+      Coordinate derivation  (center=40,40 ; SVG rotated −90°):
+        screen position of 66.7 % clockwise from 12-o'clock:
+          screen_x = 40 + R·sin(240°) = 40 − 0.866·R
+          screen_y = 40 − R·cos(240°) = 40 + 0.5·R
+        SVG coords from screen (sx,sy):
+          x_svg = 80 − sy
+          y_svg = sx
+
+        r=24  → screen (19.2, 52)  → SVG (28, 19.2)
+        r=41  → screen ( 4.5, 60.5)→ SVG (19.5, 4.5)
+    */
+    .gauge-goal-tick {
+      stroke: var(--goal-color);
+      stroke-width: 3;
+      stroke-linecap: round;
+    }
+
+    /*
+      Outer cap dot — a small filled circle sitting just outside the
+      arc at the goal position, making the marker even easier to spot.
+    */
+    .gauge-goal-cap {
+      fill: var(--goal-color);
+    }
+
+    .gauge-center {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    }
+    .gauge-num {
+      font-family: var(--font-mono); font-size: 17px; line-height: 1;
+      color: var(--text-primary); letter-spacing: 0.02em; transition: color 0.5s;
+    }
+    .gauge-unit {
+      font-family: var(--font-ui); font-size: 8px; font-weight: 600;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-gauge);
+    }
+    .gauge-name {
+      font-family: var(--font-ui); font-size: 8px; font-weight: 600;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim);
+    }
+
+    /* Altitude arc turns green once the goal is reached */
+    .gauge-ring.goal-reached .gauge-arc { stroke: var(--goal-reached); }
+    .gauge-ring.goal-reached .gauge-num { color:  var(--goal-reached); }
+
+    /* ── CENTER SECTION ─────────────────────────────────────────── */
+    #center-section {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 4px; padding: 0 10px;
+    }
+
+    #timer-row { display: flex; align-items: center; gap: 16px; justify-content: center; }
+
+    .side-clock { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 76px; }
+    .sc-label {
+      font-family: var(--font-ui); font-size: 8px; font-weight: 600;
+      letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-dim);
+    }
+    .sc-time { font-family: var(--font-mono); font-size: 14px; letter-spacing: 0.06em; color: var(--text-timer); }
+
+    /* T+ HH:MM:SS.cs */
+    #timer {
+      font-family: var(--font-display); font-size: 46px; font-weight: 700;
+      letter-spacing: 0.04em; color: var(--text-primary);
+      line-height: 1; white-space: nowrap;
+    }
+    #timer .timer-prefix {
+      font-size: 26px; font-weight: 700; color: var(--text-timer);
+      letter-spacing: 0.06em; margin-right: 3px; vertical-align: 4px;
+    }
+    /* Centiseconds — always visible, slightly muted so they read as a subscript */
+    #timer-cs {
+      font-family: var(--font-display);
+      font-size: 24px; font-weight: 700;
+      color: var(--text-timer);
+      letter-spacing: 0.04em;
+      margin-left: 1px; vertical-align: 4px;
+    }
+
+    #phase-label {
+      font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+      letter-spacing: 0.28em; text-transform: uppercase; color: var(--text-timer);
+    }
+
+    /*
+      Goal counter — live countdown to 10 000 ft while ascending.
+      Freezes permanently at apogee (peak altitude) showing the final
+      delta vs the goal.  Timer and all other telemetry continue.
+
+      States:
+        (default)  #00cece — more than 2 000 ft remaining
+        .near      #ffc947 — within 2 000 ft (amber)
+        .reached   #00e676 — apogee was at or above goal (green)
+        .short     #ffc947 — apogee was below goal (amber)
+    */
+    #goal-counter {
+      font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--accent); transition: color 0.4s;
+    }
+    #goal-counter.near    { color: var(--goal-color);   }
+    #goal-counter.reached { color: var(--goal-reached); }
+    #goal-counter.short   { color: var(--goal-color);   }
+
+    /* ── RESPONSIVE ─────────────────────────────────────────────── */
+    @media (max-width: 1200px) {
+      :root { --gauge-size: 64px; --gauge-stroke-w: 4px; }
+      #timer    { font-size: 34px; }
+      #timer-cs { font-size: 18px; }
+      #timer-row { gap: 10px; }
+      .sc-time   { font-size: 12px; }
+      .side-clock { min-width: 60px; }
+    }
+  </style>
+</head>
+<body>
+<div id="overlay">
+
+  <!-- ══ TOP-LEFT: Mission branding + UTC timestamp ══════════════ -->
+  <div id="brand-left">
+    <div class="bl-org">UNL Aerospace</div>
+    <div class="bl-mission">VORTEX</div>
+    <div class="bl-rule"></div>
+    <div class="bl-timestamp" id="timestamp"></div>
+  </div>
+
+  <!-- ══ BOTTOM PANEL ═══════════════════════════════════════════ -->
+  <div id="bottom-panel">
+
+    <!-- Timeline strip -->
+    <div id="timeline">
+      <div class="tl-track">
+        <div class="tl-fill" id="tl-fill"></div>
+      </div>
+      <div class="tl-cursor" id="tl-cursor"></div>
+    </div>
+
+    <!-- Data bar -->
+    <div id="data-bar">
+
+      <!-- LEFT — velocity gauge -->
+      <div class="gauge-wrap">
+        <div class="gauge-ring" id="ring-vel">
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle class="gauge-track-c" cx="40" cy="40" r="34"/>
+            <circle class="gauge-arc" cx="40" cy="40" r="34"
+              id="arc-vel" stroke-dasharray="213.63" stroke-dashoffset="213.63"/>
+          </svg>
+          <div class="gauge-center">
+            <span class="gauge-num" id="g-vel">0</span>
+            <span class="gauge-unit">mph</span>
+          </div>
+        </div>
+        <span class="gauge-name">Velocity</span>
+      </div>
+
+      <div class="bar-divider"></div>
+
+      <!-- CENTER — LOCAL | T+ timer | GMT  ·  phase  ·  goal counter -->
+      <div id="center-section">
+        <div id="timer-row">
+          <div class="side-clock">
+            <span class="sc-label">Local</span>
+            <span class="sc-time" id="local-time">——:——:——</span>
+          </div>
+
+          <div id="timer">
+            <span class="timer-prefix">T+</span><span id="timer-digits">00:00:00</span><span id="timer-cs">.00</span>
+          </div>
+
+          <div class="side-clock">
+            <span class="sc-label">GMT</span>
+            <span class="sc-time" id="gmt-time">——:——:——</span>
+          </div>
+        </div>
+
+        <div id="phase-label">PRELAUNCH</div>
+        <div id="goal-counter">↓ 10,000 FT TO GOAL</div>
+      </div>
+
+      <div class="bar-divider"></div>
+
+      <!-- RIGHT — altitude gauge -->
+      <div class="gauge-wrap">
+        <div class="gauge-ring" id="ring-alt">
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle class="gauge-track-c" cx="40" cy="40" r="34"/>
+            <circle class="gauge-arc" cx="40" cy="40" r="34"
+              id="arc-alt" stroke-dasharray="213.63" stroke-dashoffset="213.63"/>
+
+            <!--
+              10 000 ft GOAL MARKER  (66.7 % of 15 000 ft scale)
+              ─────────────────────────────────────────────────────
+              Pre-rotation SVG coordinates for elements inside this
+              rotated SVG (all coordinates are in SVG space before the
+              −90° CSS rotation is applied):
+
+                Goal tick line crosses through the arc:
+                  inner end  r=24 → SVG (28,   19.2)
+                  outer end  r=41 → SVG (19.5,  4.5)
+
+                Cap dot sits just outside the arc at r=43:
+                  screen (3.7, 61.5) → SVG (18.5, 3.7)
+
+              The visible result on screen is a bright amber tick that
+              crosses the arc ring at the 10 k position, plus a small
+              amber dot outside it marking the exact level.
+            -->
+            <line class="gauge-goal-tick"
+              x1="28"   y1="19.2"
+              x2="19.5" y2="4.5"/>
+            <circle class="gauge-goal-cap" cx="18.5" cy="3.7" r="2.5"/>
+          </svg>
+          <div class="gauge-center">
+            <span class="gauge-num" id="g-alt">0</span>
+            <span class="gauge-unit">ft</span>
+          </div>
+        </div>
+        <span class="gauge-name">Altitude</span>
+      </div>
+
+    </div><!-- /data-bar -->
+  </div><!-- /bottom-panel -->
+</div><!-- /overlay -->
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   CONFIGURATION
+═══════════════════════════════════════════════════════════════════ */
+const ALT_MAX  = 15000;   // ft — full-scale gauge arc
+const ALT_GOAL = 10000;   // ft — competition target (gold tick position)
+const VEL_MAX  = 1000;    // mph — full-scale gauge arc (sim peak ≈ 816 mph)
+const CIRC     = 213.63;  // SVG arc circumference  (2π × r=34)
+
+/*
+  Timeline events — OpenRocket simulation data:
+    Liftoff        T+0 s
+    Motor burnout  T+3 s   (1 476 ft / 450 m)
+    Apogee+drogue  T+23 s  (10 171 ft / 3 100 m)
+    Main deploy    T+120 s (  656 ft /  200 m)
+    Ground hit     T+140 s
+*/
+const EVENTS = [
+  { label: 'LIFTOFF',  norm_t: 0.00 },
+  { label: 'BURNOUT',  norm_t: 0.15 },
+  { label: 'APOGEE',   norm_t: 0.55 },
+  { label: 'MAIN',     norm_t: 0.90 },
+  { label: 'LANDING',  norm_t: 1.00 },
+];
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   CENTISECOND TIMER  (requestAnimationFrame)
+   ───────────────────────────────────────────────────────────────────
+   The server sends integer mission_time once per second.  Between
+   updates the rAF loop interpolates forward from the wall clock,
+   keeping the .cs display smooth at ≈60 fps with no drift.
+═══════════════════════════════════════════════════════════════════ */
+let _timerBaseMs = 0;   // last mission_time converted to ms
+let _timerBaseTs = 0;   // Date.now() when that value arrived
+
+(function _timerLoop() {
+  const nowMs = _timerBaseTs > 0
+    ? Math.max(0, _timerBaseMs + (Date.now() - _timerBaseTs))
+    : 0;
+
+  const h  = Math.floor(nowMs / 3_600_000);
+  const m  = Math.floor((nowMs % 3_600_000) / 60_000);
+  const s  = Math.floor((nowMs % 60_000)    / 1_000);
+  const cs = Math.floor((nowMs % 1_000)     / 10);     // centiseconds 0–99
+
+  document.getElementById('timer-digits').textContent =
+    `${_p(h)}:${_p(m)}:${_p(s)}`;
+  document.getElementById('timer-cs').textContent =
+    `.${String(cs).padStart(2, '0')}`;
+
+  requestAnimationFrame(_timerLoop);
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   GOAL COUNTER — APOGEE FREEZE
+   ───────────────────────────────────────────────────────────────────
+   The goal counter counts down normally during ascent.  At apogee
+   (the moment peak altitude is detected), it freezes and displays
+   the final delta vs ALT_GOAL.  Everything else — timer, gauges,
+   phase, timeline — continues updating.
+
+   Freeze is triggered by:
+     1. ingestPacket: rolling velocity window turns negative
+     2. updateTelemetry: altitude drops >50 ft from tracked peak
+
+   Call window.resetGoal() between flights to unfreeze.
+═══════════════════════════════════════════════════════════════════ */
+let _goalFrozen   = false;   // true once apogee is detected
+let _peakAltSeen  = 0;       // highest altitude seen (ft) — for updateTelemetry path
+
+function _freezeGoalCounter(peakAltFt) {
+  if (_goalFrozen) return;
+  _goalFrozen = true;
+
+  const gc    = document.getElementById('goal-counter');
+  const delta = Math.round(peakAltFt) - ALT_GOAL;
+
+  if (delta >= 0) {
+    gc.className   = 'reached';
+    gc.textContent = `✓  +${delta.toLocaleString()} FT ABOVE GOAL`;
+  } else {
+    gc.className   = 'short';
+    gc.textContent = `↓  ${Math.abs(delta).toLocaleString()} FT SHORT OF GOAL`;
+  }
+}
+
+window.resetGoal = function () {
+  _goalFrozen  = false;
+  _peakAltSeen = 0;
+  const gc = document.getElementById('goal-counter');
+  gc.className   = '';
+  gc.textContent = '↓ 10,000 FT TO GOAL';
+};
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   PUBLIC API — window.updateTelemetry(data)
+   ───────────────────────────────────────────────────────────────────
+   Fields:
+     altitude      {number}  ft       0 – 15 000
+     velocity      {number}  mph      0 – 1 000
+     mission_time  {number}  seconds  T+ elapsed
+     timeline_norm {number}  0–1      timeline cursor
+     phase         {string}           e.g. "ASCENT"
+     mission_name  {string}           optional branding
+     vehicle       {string}           optional org name
+
+   One-liner WebSocket hook:
+     ws.onmessage = e => window.updateTelemetry(JSON.parse(e.data));
+═══════════════════════════════════════════════════════════════════ */
+window.updateTelemetry = function (d) {
+  const alt  = Math.max(0, Math.min(ALT_MAX, d.altitude      ?? 0));
+  const vel  = Math.max(0, Math.min(VEL_MAX, d.velocity      ?? 0));
+  const time = Math.max(0,                   d.mission_time  ?? 0);
+  const norm = Math.max(0, Math.min(1,       d.timeline_norm ?? 0));
+
+  /* ── Timer base (rAF loop reads this) ───────────────────────── */
+  const newBaseMs = time * 1000;
+  if (newBaseMs >= _timerBaseMs) {
+    _timerBaseMs = newBaseMs;
+    _timerBaseTs = Date.now();
+  }
+
+  /* ── Phase ───────────────────────────────────────────────────── */
+  if (d.phase != null)
+    document.getElementById('phase-label').textContent = String(d.phase).toUpperCase();
+
+  /* ── Velocity gauge ──────────────────────────────────────────── */
+  document.getElementById('arc-vel')
+    .setAttribute('stroke-dashoffset', CIRC * (1 - vel / VEL_MAX));
+  document.getElementById('g-vel').textContent = Math.round(vel).toLocaleString();
+
+  /* ── Altitude gauge ──────────────────────────────────────────── */
+  document.getElementById('arc-alt')
+    .setAttribute('stroke-dashoffset', CIRC * (1 - alt / ALT_MAX));
+  document.getElementById('g-alt').textContent = Math.round(alt).toLocaleString();
+  /* Arc turns green once goal is first crossed */
+  document.getElementById('ring-alt')
+    .classList.toggle('goal-reached', alt >= ALT_GOAL);
+
+  /* ── Goal counter (live while ascending) ─────────────────────── */
+  if (!_goalFrozen) {
+    /* Track peak for apogee detection on direct-data path */
+    if (alt > _peakAltSeen) _peakAltSeen = alt;
+
+    /*
+      Apogee detection on updateTelemetry path:
+      If the rocket has gained meaningful altitude and the current
+      reading is more than 50 ft below the tracked peak, apogee
+      has been passed — freeze the counter.
+    */
+    if (_peakAltSeen > 200 && alt < _peakAltSeen - 50) {
+      _freezeGoalCounter(_peakAltSeen);
+    } else {
+      /* Still ascending — show live countdown */
+      const gc     = document.getElementById('goal-counter');
+      const toGoal = ALT_GOAL - alt;
+      if (alt >= ALT_GOAL) {
+        gc.className   = 'reached';
+        gc.textContent = '✓  GOAL ALTITUDE';
+      } else {
+        gc.className   = toGoal <= 2000 ? 'near' : '';
+        gc.textContent = '↓ ' + Math.round(toGoal).toLocaleString() + ' FT TO GOAL';
+      }
+    }
+  }
+
+  /* ── Branding overrides ──────────────────────────────────────── */
+  if (d.mission_name)
+    document.querySelector('#brand-left .bl-mission').textContent = d.mission_name;
+  if (d.vehicle)
+    document.querySelector('#brand-left .bl-org').textContent = d.vehicle;
+
+  /* ── Timeline ────────────────────────────────────────────────── */
+  _updateTimeline(norm);
+};
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   window.ingestPacket(line)
+   ───────────────────────────────────────────────────────────────────
+   Parses one raw line from the flight computer:
+
+     Format A — "2026-04-30T23:04:52.865062,{...JSON...}"
+     Format B — plain JSON object string
+
+   Fields used:
+     p_alt          barometric altitude, meters
+                    (ground ≈ −349 m; first reading sets baseline)
+     gps.altitude   GPS altitude MSL, meters (fallback)
+
+   Streaming guard:
+     window.streamingActive = false   pauses processing
+     window.streamingActive = true    resumes
+═══════════════════════════════════════════════════════════════════ */
+window.streamingActive = true;
+
+/* Packet parser state */
+let _baselineAlt = null, _launchTime   = null,
+    _prevAltM    = null, _prevPktMs    = null,
+    _velSamples  = [],   _pktPeakFt    = 0,
+    _pktPhase    = 'PRELAUNCH', _pktApogeeDetected = false;
+
+window.ingestPacket = function (rawLine) {
+  if (!window.streamingActive) return;
+
+  const raw = String(rawLine).trim();
+  if (!raw) return;
+
+  let pkt, pktDate;
+  if (raw.charAt(0) === '{') {
+    try { pkt = JSON.parse(raw); } catch (e) { return; }
+    pktDate = new Date();
+  } else {
+    const split = raw.indexOf(',{');
+    if (split === -1) return;
+    const tsStr = raw.slice(0, split);
+    try { pkt = JSON.parse(raw.slice(split + 1)); } catch (e) { return; }
+    pktDate = new Date(tsStr.includes('Z') ? tsStr : tsStr + 'Z');
+    if (isNaN(pktDate)) pktDate = new Date();
+  }
+
+  const altM = pkt.p_alt ?? pkt.gps?.altitude ?? null;
+  if (altM == null) return;
+
+  const pktMs = pktDate.getTime();
+
+  if (_baselineAlt === null) _baselineAlt = altM;
+
+  const relAltM  = altM - _baselineAlt;
+  const relAltFt = Math.max(0, relAltM * 3.28084);
+
+  if (_launchTime === null && relAltM > 1.0) _launchTime = pktDate;
+
+  const missionSec = _launchTime
+    ? Math.max(0, Math.floor((pktDate - _launchTime) / 1000))
+    : 0;
+
+  /* Velocity from derivative of p_alt */
+  let velMph = 0;
+  if (_prevAltM !== null && _prevPktMs !== null) {
+    const dtMs = pktMs - _prevPktMs;
+    if (dtMs > 0 && dtMs < 5000) {
+      const velMps = (altM - _prevAltM) / (dtMs / 1000);
+      _velSamples.push(velMps);
+      if (_velSamples.length > 8) _velSamples.shift();
+      const avg = _velSamples.reduce((a, b) => a + b, 0) / _velSamples.length;
+      velMph = Math.abs(avg) * 2.23694;
+    }
+  }
+  _prevAltM  = altM;
+  _prevPktMs = pktMs;
+
+  const ascending = _velSamples.length === 0 ||
+    (_velSamples.reduce((a, b) => a + b, 0) / _velSamples.length) > -0.3;
+
+  if (relAltFt > _pktPeakFt) _pktPeakFt = relAltFt;
+
+  /*
+    Apogee detection on ingestPacket path:
+    Velocity rolling average has gone clearly negative AND we have
+    dropped meaningfully from the tracked peak.
+  */
+  if (!_pktApogeeDetected && !ascending && relAltFt < _pktPeakFt - 20 && _pktPeakFt > 200) {
+    _pktApogeeDetected = true;
+    _freezeGoalCounter(_pktPeakFt);
+  }
+
+  /* Timeline norm (altitude-based) */
+  let tlNorm;
+  if (ascending) {
+    tlNorm = Math.min(0.55, (relAltFt / ALT_GOAL) * 0.55);
+  } else {
+    const peak        = _pktPeakFt || ALT_GOAL;
+    const descentFrac = 1 - Math.min(1, relAltFt / peak);
+    tlNorm            = 0.55 + descentFrac * 0.45;
+  }
+
+  /* Phase state machine */
+  switch (_pktPhase) {
+    case 'PRELAUNCH': if (missionSec > 0)                              _pktPhase = 'LIFTOFF';  break;
+    case 'LIFTOFF':   if (relAltFt > 200 || velMph > 60)              _pktPhase = 'ASCENT';   break;
+    case 'ASCENT':    if (!ascending && relAltFt > 500)                _pktPhase = 'APOGEE';   break;
+    case 'APOGEE':    if (relAltFt < _pktPeakFt - 50 && velMph > 10) _pktPhase = 'DESCENT';  break;
+    case 'DESCENT':   if (relAltFt < 50 && missionSec > 20)           _pktPhase = 'LANDING';  break;
+  }
+
+  window.updateTelemetry({
+    altitude:      relAltFt,
+    velocity:      velMph,
+    mission_time:  missionSec,
+    timeline_norm: tlNorm,
+    phase:         _pktPhase,
+  });
+};
+
+/* Reset all state between flights */
+window.resetPacketState = function () {
+  _baselineAlt = null; _launchTime = null;
+  _prevAltM    = null; _prevPktMs  = null;
+  _velSamples  = [];   _pktPeakFt  = 0;
+  _pktPhase    = 'PRELAUNCH'; _pktApogeeDetected = false;
+  _timerBaseMs = 0;    _timerBaseTs = 0;
+  window.resetGoal();
+};
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   TIMELINE
+═══════════════════════════════════════════════════════════════════ */
+function buildTimeline() {
+  const tl = document.getElementById('timeline');
+  tl.querySelectorAll('.tl-event').forEach(n => n.remove());
+  const L = 5, R = 95;
+  for (const ev of EVENTS) {
+    const el      = document.createElement('div');
+    el.className  = 'tl-event';
+    el.dataset.nt = ev.norm_t;
+    el.style.left = (L + ev.norm_t * (R - L)) + '%';
+    el.innerHTML  = `<div class="tl-dot"></div><span class="tl-label">${ev.label}</span>`;
+    tl.appendChild(el);
+  }
+}
+
+function _updateTimeline(norm) {
+  const L = 5, R = 95;
+  document.getElementById('tl-fill').style.width  = (norm * 100) + '%';
+  document.getElementById('tl-cursor').style.left = (L + norm * (R - L)) + '%';
+  document.querySelectorAll('.tl-event').forEach((el, i) => {
+    const nt   = parseFloat(el.dataset.nt);
+    const next = EVENTS[i + 1];
+    el.classList.remove('done', 'active');
+    if (norm >= nt) {
+      if (next && norm < next.norm_t) el.classList.add('active');
+      else                            el.classList.add('done');
+    }
+  });
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   UTILITIES
+═══════════════════════════════════════════════════════════════════ */
+function _p(n) { return String(Math.floor(n)).padStart(2, '0'); }
+
+/* Wall-clock tick — timestamp block + side-clock displays */
+(function _clockTick() {
+  const now = new Date();
+  document.getElementById('timestamp').textContent =
+    now.toISOString().replace('T', ' ').slice(0, 23) + 'Z';
+  document.getElementById('gmt-time').textContent =
+    now.toISOString().slice(11, 19);
+  document.getElementById('local-time').textContent =
+    now.toLocaleTimeString('en-US', { hour12: false });
+  setTimeout(_clockTick, 1000);
+})();
+
+/* ── Init ── */
+buildTimeline();
+</script>
+</body>
+</html>
