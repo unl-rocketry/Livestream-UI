@@ -1,2 +1,2 @@
 # Livestream-UI
-basic Livestream UI for UNL Rocketry
+Basic Livestream UI for UNL Rocketry
