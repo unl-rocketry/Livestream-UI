@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Vortex — Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Share+Tech+Mono&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      /*
+        OBS Browser Source:
+          Width: 1920  Height: 1080
+          ✓ Allow Transparency
+      */
+      background: transparent;
+    }
+
+    /* ── DESIGN TOKENS ──────────────────────────────────────────── */
+    :root {
+      --panel-bg:      rgba(5, 13, 22, 0.94);
+      --panel-border:  rgba(0, 206, 206, 0.18);
+      --divider:       rgba(255, 255, 255, 0.08);
+
+      --text-primary:  #ffffff;
+      --text-muted:    rgba(255, 255, 255, 0.38);
+      --text-dim:      rgba(255, 255, 255, 0.16);
+
+      --font-display:  'Orbitron',        monospace;
+      --font-mono:     'Share Tech Mono', monospace;
+      --font-ui:       'Exo 2',           sans-serif;
+
+      --bar-height:    72px;
+    }
+
+    /* ── OVERLAY ROOT ───────────────────────────────────────────── */
+    #overlay {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       TOP-LEFT BRANDING BLOCK
+         UNL AEROSPACE  (small label)
+         VORTEX         (mission name)
+         ─────────────
+         2026-05-01 18:04:52.456Z  (live UTC timestamp)
+    ══════════════════════════════════════════════════════════════ */
+    #brand-left {
+      position: absolute;
+      top: 12px; left: 14px;
+    }
+
+    #brand-left .bl-org {
+      font-family: var(--font-ui);
+      font-size: 9px; font-weight: 600;
+      letter-spacing: 0.26em; text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    #brand-left .bl-mission {
+      font-family: var(--font-display);
+      font-size: 20px; font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+
+    #brand-left .bl-rule {
+      margin-top: 5px; margin-bottom: 4px;
+      height: 1px;
+      background: var(--panel-border);
+    }
+
+    #brand-left .bl-timestamp {
+      font-family: var(--font-mono);
+      font-size: 10px; letter-spacing: 0.06em;
+      color: var(--text-dim);
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       BOTTOM CLOCK BAR
+       Full-width panel pinned to the bottom of the screen.
+       Contains only LOCAL and GMT time displays.
+    ══════════════════════════════════════════════════════════════ */
+    #bottom-panel {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: var(--bar-height);
+      background: var(--panel-bg);
+      border-top: 1px solid var(--panel-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Clock cell (LOCAL or GMT) ──────────────────────────────── */
+    .clock-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 0 48px;
+    }
+
+    .clock-label {
+      font-family: var(--font-ui);
+      font-size: 9px; font-weight: 600;
+      letter-spacing: 0.28em; text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .clock-value {
+      font-family: var(--font-mono);
+      font-size: 36px;
+      letter-spacing: 0.06em;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+
+    /* ── Thin vertical divider between the two clocks ───────────── */
+    .clock-divider {
+      width: 1px;
+      height: 44px;
+      background: var(--divider);
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+<div id="overlay">
+
+  <!-- TOP-LEFT: branding + UTC timestamp -->
+  <div id="brand-left">
+    <div class="bl-org">UNL Aerospace</div>
+    <div class="bl-mission">VORTEX</div>
+    <div class="bl-rule"></div>
+    <div class="bl-timestamp" id="timestamp"></div>
+  </div>
+
+  <!-- BOTTOM: LOCAL and GMT clocks only -->
+  <div id="bottom-panel">
+    <div class="clock-cell">
+      <span class="clock-label">Local</span>
+      <span class="clock-value" id="local-time">——:——:——</span>
+    </div>
+
+    <div class="clock-divider"></div>
+
+    <div class="clock-cell">
+      <span class="clock-label">GMT</span>
+      <span class="clock-value" id="gmt-time">——:——:——</span>
+    </div>
+  </div>
+
+</div><!-- /overlay -->
+
+<script>
+  /*
+    Self-contained clock — no external JS file needed.
+    Updates the three time displays once per second.
+
+    LOCAL uses the browser's system timezone.  In OBS, the
+    machine running the Browser Source sets what "local" means,
+    so point OBS at a machine in the same timezone as the
+    launch site, or set the system timezone to America/Chicago
+    for Nebraska launches.
+  */
+  (function tick() {
+    const now = new Date();
+
+    /* Top-left UTC timestamp (full precision) */
+    document.getElementById('timestamp').textContent =
+      now.toISOString().replace('T', ' ').slice(0, 23) + 'Z';
+
+    /* Bottom bar — LOCAL */
+    document.getElementById('local-time').textContent =
+      now.toLocaleTimeString('en-US', { hour12: false });
+
+    /* Bottom bar — GMT */
+    document.getElementById('gmt-time').textContent =
+      now.toISOString().slice(11, 19);
+
+    setTimeout(tick, 1000);
+  })();
+</script>
+</body>
+</html>
